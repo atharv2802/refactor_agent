@@ -1,0 +1,71 @@
+{
+  "scenario_name": "multi_patient",
+  "description": "Two claims for two DIFFERENT patients on the same payer. The rep re-verifies the second patient before giving status. Tests per-patient re-verification and correct per-claim mapping.",
+  "call_request": {
+    "payer_name": "Cigna",
+    "claims": [
+      {
+        "claim_id": "CLM-P1-001",
+        "provider_npi": "1841293847",
+        "provider_tax_id": "954321987",
+        "patient_member_id": "CIG111000111",
+        "patient_first_name": "Olivia",
+        "patient_last_name": "Park",
+        "patient_date_of_birth": "06/12/1991",
+        "date_of_service": "01/09/2025",
+        "billed_amount": 640.00
+      },
+      {
+        "claim_id": "CLM-P2-002",
+        "provider_npi": "1841293847",
+        "provider_tax_id": "954321987",
+        "patient_member_id": "CIG222000222",
+        "patient_first_name": "Marcus",
+        "patient_last_name": "Webb",
+        "patient_date_of_birth": "10/27/1975",
+        "date_of_service": "01/11/2025",
+        "billed_amount": 1280.00
+      }
+    ]
+  },
+  "scripted_rep_turns": [
+    "Cigna provider services. Can I get your NPI and the member ID for the first patient?",
+    "And that patient's date of birth?",
+    "Thanks. That first claim was paid, 640 dollars on January 22nd, check number 4410.",
+    "Sure, I can check another. Since it's a different patient, I'll need to verify them too — what's the member ID?",
+    "And the patient's name and date of birth?",
+    "Got it. That claim was denied, code CO-16, missing information, appeal deadline March 1st.",
+    "My name is Grace, reference CIG-MP-88.",
+    "Have a good day, bye."
+  ],
+  "expected_results": {
+    "claims": [
+      {
+        "claim_id": "CLM-P1-001",
+        "status": "adjusted",
+        "lines": [{ "status": "paid", "paid_amount": 640.00 }],
+        "payment_date": "January 22",
+        "check_or_eft_number": "4410"
+      },
+      {
+        "claim_id": "CLM-P2-002",
+        "status": "adjusted",
+        "lines": [
+          {
+            "status": "denied",
+            "denial_reason_code": "CO-16",
+            "denial_reason_description": "missing information"
+          }
+        ],
+        "appeal_deadline": "March 1"
+      }
+    ],
+    "rep_name": "Grace",
+    "reference_number": "CIG-MP-88"
+  },
+  "expected_conversation_properties": {
+    "max_turns": 16,
+    "recorded_all_claims": true,
+    "captured_rep_name": true
+  }
+}

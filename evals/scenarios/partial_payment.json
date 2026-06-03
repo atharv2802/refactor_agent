@@ -1,0 +1,57 @@
+{
+  "scenario_name": "partial_payment",
+  "description": "An adjusted claim with two service lines: one paid, one denied. Tests line-level adjudication (the case a flat claim-level model can't represent) and asking for the check/EFT.",
+  "call_request": {
+    "payer_name": "UnitedHealthcare",
+    "claims": [
+      {
+        "claim_id": "CLM-2025-0808",
+        "provider_npi": "1841293847",
+        "provider_tax_id": "954321987",
+        "patient_member_id": "UHC808080808",
+        "patient_first_name": "Priya",
+        "patient_last_name": "Anand",
+        "patient_date_of_birth": "09/03/1989",
+        "date_of_service": "01/30/2025",
+        "billed_amount": 1300.00
+      }
+    ]
+  },
+  "scripted_rep_turns": [
+    "Provider services, can I have your NPI and the member ID?",
+    "Okay, that claim was processed. It has two lines on it.",
+    "The first line, procedure 99214, was paid 220 dollars.",
+    "The second line, procedure 20610, was denied.",
+    "That denial is code CO-97, the service is included in another procedure already paid.",
+    "The total paid was 220 dollars, sent on February 5th under EFT number 55230.",
+    "My name is Victor, reference UHC-PP-404.",
+    "Goodbye."
+  ],
+  "expected_results": {
+    "claims": [
+      {
+        "claim_id": "CLM-2025-0808",
+        "status": "adjusted",
+        "lines": [
+          { "procedure_code": "99214", "status": "paid", "paid_amount": 220.00 },
+          {
+            "procedure_code": "20610",
+            "status": "denied",
+            "denial_reason_code": "CO-97",
+            "denial_reason_description": "service included in another procedure already paid"
+          }
+        ],
+        "total_paid_amount": 220.00,
+        "payment_date": "February 5",
+        "check_or_eft_number": "55230"
+      }
+    ],
+    "rep_name": "Victor",
+    "reference_number": "UHC-PP-404"
+  },
+  "expected_conversation_properties": {
+    "max_turns": 14,
+    "recorded_all_claims": true,
+    "captured_rep_name": true
+  }
+}

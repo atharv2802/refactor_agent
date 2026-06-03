@@ -33,7 +33,7 @@ def test_sanitize_strips_markdown_and_collapses_whitespace():
 def test_validate_tool_call_unknown_claim(call_request):
     g = Guardrails()
     v = g.validate_tool_call(_session(call_request), "record_claim_status",
-                             {"claim_id": "NOPE", "status": "paid"})
+                             {"claim_id": "NOPE", "status": "adjusted"})
     assert not v.ok
 
 
@@ -45,11 +45,21 @@ def test_validate_tool_call_bad_status(call_request):
     assert not v.ok
 
 
-def test_validate_tool_call_negative_amount(call_request):
+def test_validate_tool_call_bad_line_status(call_request):
     g = Guardrails()
     cid = call_request.claims[0].claim_id
     v = g.validate_tool_call(_session(call_request), "record_claim_status",
-                             {"claim_id": cid, "status": "paid", "paid_amount": -5})
+                             {"claim_id": cid, "status": "adjusted",
+                              "lines": [{"status": "refunded"}]})
+    assert not v.ok
+
+
+def test_validate_tool_call_negative_line_amount(call_request):
+    g = Guardrails()
+    cid = call_request.claims[0].claim_id
+    v = g.validate_tool_call(_session(call_request), "record_claim_status",
+                             {"claim_id": cid, "status": "adjusted",
+                              "lines": [{"status": "paid", "paid_amount": -5}]})
     assert not v.ok
 
 
@@ -57,8 +67,17 @@ def test_validate_tool_call_absurd_amount_warns(call_request):
     g = Guardrails()
     cid = call_request.claims[0].claim_id
     v = g.validate_tool_call(_session(call_request), "record_claim_status",
-                             {"claim_id": cid, "status": "paid", "paid_amount": 5_000_000})
+                             {"claim_id": cid, "status": "adjusted",
+                              "lines": [{"status": "paid", "paid_amount": 5_000_000}]})
     assert v.ok and v.warnings
+
+
+def test_unresolved_status_is_valid(call_request):
+    g = Guardrails()
+    cid = call_request.claims[0].claim_id
+    v = g.validate_tool_call(_session(call_request), "record_claim_status",
+                             {"claim_id": cid, "status": "unresolved"})
+    assert v.ok
 
 
 def test_double_record_rejected(call_request):
@@ -66,6 +85,6 @@ def test_double_record_rejected(call_request):
     g = Guardrails()
     session = _session(call_request)
     cid = call_request.claims[0].claim_id
-    session.claims_completed.append(ClaimStatusResult(claim_id=cid, status=ClaimStatus.PAID))
-    v = g.validate_tool_call(session, "record_claim_status", {"claim_id": cid, "status": "paid"})
+    session.claims_completed.append(ClaimStatusResult(claim_id=cid, status=ClaimStatus.ADJUSTED))
+    v = g.validate_tool_call(session, "record_claim_status", {"claim_id": cid, "status": "adjusted"})
     assert not v.ok

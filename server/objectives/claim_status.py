@@ -17,9 +17,41 @@ from server.models import (
     ClaimStatus,
     ClaimStatusResult,
     ConversationPhase,
+    LineStatus,
 )
 from server.objectives.base import CallObjective, ToolResult
 from server.objectives.registry import register_objective
+
+# Above this, a paid amount is more likely a misheard figure than a real one, so
+# it always earns a human glance. (Mirrors the guardrails "suspicious amount"
+# bar; kept here so review triage doesn't depend on the guardrails internals.)
+_REVIEW_AMOUNT_THRESHOLD = 1_000_000.0
+
+
+def _derive_review(result: ClaimStatusResult) -> None:
+    """Decide whether a recorded claim needs a human glance before it's acted on.
+
+    Combines what the agent flagged itself (``needs_human_review`` /
+    ``low_confidence_fields``) with deterministic rules for situations whose
+    extracted value drives an irreversible money decision: no clear resolution,
+    an appeal deadline to honour, or an implausibly large amount. Mutates
+    ``result`` in place.
+    """
+    reasons = list(result.review_reasons)
+    reasons += [f"low_confidence:{name}" for name in result.low_confidence_fields]
+
+    if result.status is ClaimStatus.UNRESOLVED:
+        reasons.append("unresolved_no_clear_answer")
+    if result.appeal_deadline:
+        reasons.append("denial_with_appeal_deadline")
+
+    amounts = [result.total_paid_amount, *(line.paid_amount for line in result.lines)]
+    if any(a is not None and a > _REVIEW_AMOUNT_THRESHOLD for a in amounts):
+        reasons.append("amount_above_review_threshold")
+
+    # Dedupe, preserve order, drop empties.
+    result.review_reasons = list(dict.fromkeys(r for r in reasons if r))
+    result.needs_human_review = result.needs_human_review or bool(result.review_reasons)
 
 
 def _format_claim_block(index: int, claim: ClaimInfo) -> str:
@@ -71,21 +103,55 @@ this is read aloud by a text-to-speech engine.
 # Claims you are calling about
 {claims_text}
 
-# Call flow
+# Navigating phone menus (IVR)
+The payer may answer with an automated system (IVR) rather than a person. If you \
+hear a recorded menu or an automated voice listing options:
+- Listen for the path to claim status or provider services and follow it.
+- Respond out loud with the requested keyword (e.g. say "claims", "provider", \
+"representative", or "agent"); if asked to choose a number, say that number clearly.
+- Keep asking for "provider services" or a "live representative" until a person \
+answers.
+- Do NOT give your greeting or any claim details to the automated system. Only \
+begin the call flow below once a live human representative is on the line.
+
+# Call flow (once a live representative answers)
 1. GREETING: Briefly introduce yourself (billing for {provider}) and say you're \
 calling to check on claim status.
 2. VERIFICATION: The rep will ask identifying questions (provider NPI, Tax ID, \
-member ID, patient name, date of birth, date of service). Answer ONE item at a \
-time, only what is asked. Do not dump every field at once.
-3. CLAIM INQUIRY: Ask for the claim's status. Then probe for ALL relevant details:
-   - If PAID: paid amount, payment/check date, check or EFT number.
-   - If DENIED: denial reason code (CARC, e.g. CO-45), the plain-English reason, \
-and the appeal deadline.
-   - If PENDING / IN REVIEW: expected timeline and what it's waiting on.
-   As soon as you have complete information for a claim, call \
-`record_claim_status` for that claim.
+member ID, patient name, date of birth, date of service). Different payers ask for \
+different items in ANY order — just answer whatever is asked, ONE item at a time. \
+Do not dump every field at once.
+3. CLAIM INQUIRY: First find out whether the claim is still PENDING (not yet \
+processed) or has been ADJUSTED (processed). Reps usually do NOT volunteer the \
+details, so ASK explicitly:
+   - If PENDING: find out WHY it's pending and HOW LONG it's expected to take. Do \
+not accept a vague "it's still processing" — push for a reason and a timeline.
+   - If ADJUSTED: go through it SERVICE LINE by SERVICE LINE. For each line, ask \
+whether it was PAID or DENIED.
+       * Paid line: ask how much was paid on that line.
+       * Denied line: ask WHY — the denial reason code (CARC/RARC, e.g. CO-45) and \
+the plain-English reason. Reps rarely give the code unprompted; request it and \
+confirm the exact code. (Denied lines are recorded for later follow-up.)
+     Then ask for the CHECK or EFT number the payment was sent under, and the \
+payment date. If the rep gives only one claim-level amount with no line breakdown, \
+record it as a single line.
+   - If the claim CANNOT BE FOUND after a couple of attempts: record it as not_found.
+   - If you CANNOT GET A CLEAR ANSWER (rep hangs up, transfers endlessly, or won't \
+say): record it as unresolved and move on.
+   CONFIRM CRITICAL VALUES before recording: read the money amounts, the check/EFT \
+number, any denial code, and the appeal deadline back to the rep and ask them to \
+confirm ("so that's eleven hundred dollars on EFT 8-8-4-3-2, correct?"). These \
+figures drive payment and appeal decisions, so a misheard digit is costly. If you \
+still cannot confirm a value (the rep won't repeat it, or you only half-heard it), \
+record your best guess but list that field name in `low_confidence_fields` so a \
+human re-checks it.
+   When you have the full picture for a claim, call `record_claim_status` with the \
+line-by-line breakdown.
 4. NEXT CLAIM: If more claims remain, say something like "I also need to check on \
-another claim" and provide the next claim's details when asked.
+another claim." Claims may be for the SAME patient (no need to re-verify the \
+patient — just give the next claim number) or a DIFFERENT patient. If it's a \
+different patient, expect the rep to re-verify that patient, and provide the new \
+member ID, name, and date of birth when asked.
 5. WRAP UP: Once all claims are recorded, ask for the rep's name and a call \
 reference number, then call `record_call_info`. Thank them and say goodbye.
 
@@ -95,9 +161,21 @@ Use the exact claim_id from the list above.
 - `record_call_info`: call it at the very end with the rep's name and reference \
 number. If the rep can't provide a reference number, still call it (leave it blank).
 
+# When you get stuck (NO live handoffs)
+You cannot transfer this call to anyone on our side, schedule a callback, or hand \
+the call off to a human live. If the rep transfers you to a different department, \
+puts you on a very long hold, or demands information you don't have:
+- Keep the call moving where you reasonably can, but NEVER promise a callback or \
+agree to be handed to someone on our end.
+- If it blocks you from resolving a claim, briefly NOTE what happened in \
+`additional_info`, record the claim (as `unresolved` if you got no clear answer, or \
+with whatever partial details you did get), set `needs_human_review` to true with a \
+short reason, and move on. A human will follow up — don't keep the rep waiting.
+
 # Edge cases
 - If asked for something not in your data: say you don't have that handy.
-- If put on hold: acknowledge briefly and wait.
+- If put on a brief hold: acknowledge and wait. For an unreasonably long hold, see \
+"When you get stuck" above.
 - If a claim cannot be found after a couple of attempts: record it as not_found \
 and move on.
 - If you don't understand the rep: politely ask them to repeat.
@@ -126,9 +204,9 @@ compliance team, and wrap up the call gracefully.
                 "function": {
                     "name": "record_claim_status",
                     "description": (
-                        "Record the status and all extracted details for a single "
-                        "claim. Call this as soon as you have complete information "
-                        "for one claim."
+                        "Record the full status of a single claim. Call once you "
+                        "have the complete picture. For an adjusted claim, include "
+                        "every service line in 'lines'."
                     ),
                     "parameters": {
                         "type": "object",
@@ -140,11 +218,66 @@ compliance team, and wrap up the call gracefully.
                             "status": {
                                 "type": "string",
                                 "enum": [s.value for s in ClaimStatus],
-                                "description": "Overall claim status.",
+                                "description": (
+                                    "Claim-level outcome: 'pending' (not yet "
+                                    "processed), 'adjusted' (processed; fill 'lines'), "
+                                    "'not_found' (payer has no record), or "
+                                    "'unresolved' (no clear answer / rep hung up)."
+                                ),
                             },
-                            "paid_amount": {
+                            "pending_reason": {
+                                "type": "string",
+                                "description": "If pending: why it is pending.",
+                            },
+                            "pending_timeline": {
+                                "type": "string",
+                                "description": "If pending: how long it is expected to take.",
+                            },
+                            "lines": {
+                                "type": "array",
+                                "description": (
+                                    "If adjusted: one entry per service line. Use a "
+                                    "single line if the rep gives only a claim-level amount."
+                                ),
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "procedure_code": {
+                                            "type": "string",
+                                            "description": "CPT/HCPCS code, e.g. 99214.",
+                                        },
+                                        "line_number": {
+                                            "type": "string",
+                                            "description": "Service line number, if stated.",
+                                        },
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [s.value for s in LineStatus],
+                                            "description": "'paid' or 'denied'.",
+                                        },
+                                        "paid_amount": {
+                                            "type": "number",
+                                            "description": "Amount paid on this line, if paid.",
+                                        },
+                                        "billed_amount": {
+                                            "type": "number",
+                                            "description": "Amount billed on this line, if stated.",
+                                        },
+                                        "denial_reason_code": {
+                                            "type": "string",
+                                            "description": "CARC/RARC code if denied, e.g. CO-45.",
+                                        },
+                                        "denial_reason_description": {
+                                            "type": "string",
+                                            "description": "Plain-English denial reason if denied.",
+                                        },
+                                    },
+                                    "required": ["status"],
+                                },
+                            },
+                            "total_paid_amount": {
                                 "type": "number",
-                                "description": "Amount paid, if the claim was paid.",
+                                "description": "Total paid across the claim, if adjusted.",
                             },
                             "payment_date": {
                                 "type": "string",
@@ -152,27 +285,48 @@ compliance team, and wrap up the call gracefully.
                             },
                             "check_or_eft_number": {
                                 "type": "string",
-                                "description": "Check number or EFT reference.",
-                            },
-                            "denial_reason_code": {
-                                "type": "string",
-                                "description": "CARC/RARC denial code, e.g. CO-45.",
-                            },
-                            "denial_reason_description": {
-                                "type": "string",
-                                "description": "Plain-English denial reason.",
+                                "description": "Check number or EFT reference the money was sent under.",
                             },
                             "appeal_deadline": {
                                 "type": "string",
-                                "description": "Appeal deadline for a denied claim.",
+                                "description": "Appeal deadline, if applicable.",
                             },
                             "status_details": {
                                 "type": "string",
-                                "description": "Free-text detail, e.g. pending timeline.",
+                                "description": "Any free-text clarification.",
                             },
                             "additional_info": {
                                 "type": "string",
                                 "description": "Anything else relevant the rep mentioned.",
+                            },
+                            "needs_human_review": {
+                                "type": "boolean",
+                                "description": (
+                                    "Set true if a human should double-check this "
+                                    "claim before acting on it: you were transferred "
+                                    "around, put on a very long hold, couldn't get "
+                                    "the info, or you are not confident in a value "
+                                    "you recorded."
+                                ),
+                            },
+                            "review_reasons": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": (
+                                    "Short reasons a human should review this claim, "
+                                    "e.g. 'rep transferred us twice' or 'could not "
+                                    "confirm the paid amount'."
+                                ),
+                            },
+                            "low_confidence_fields": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": (
+                                    "Names of fields you recorded but could NOT "
+                                    "confirm with the rep, e.g. 'total_paid_amount' "
+                                    "or 'check_or_eft_number'. Use this when the line "
+                                    "was noisy or the rep wouldn't repeat a value."
+                                ),
                             },
                         },
                         "required": ["claim_id", "status"],
@@ -231,15 +385,19 @@ compliance team, and wrap up the call gracefully.
         self, session: CallSession, arguments: dict[str, Any]
     ) -> ToolResult:
         result = ClaimStatusResult(**arguments)
+        _derive_review(result)
         session.claims_completed.append(result)
         session.current_claim_index += 1
 
+        review_note = (
+            " Flagged for human review." if result.needs_human_review else ""
+        )
         remaining = session.remaining_claims()
         if remaining > 0:
             session.phase = ConversationPhase.NEXT_CLAIM
             return ToolResult(
                 content=(
-                    f"Recorded claim {result.claim_id} as '{result.status.value}'. "
+                    f"Recorded claim {result.claim_id} as '{result.status.value}'.{review_note} "
                     f"{remaining} claim(s) still to check — proceed to the next one."
                 )
             )
@@ -247,7 +405,7 @@ compliance team, and wrap up the call gracefully.
         session.phase = ConversationPhase.WRAP_UP
         return ToolResult(
             content=(
-                f"Recorded claim {result.claim_id} as '{result.status.value}'. "
+                f"Recorded claim {result.claim_id} as '{result.status.value}'.{review_note} "
                 "All claims are now recorded. Ask the rep for their name and a "
                 "call reference number, then call record_call_info."
             )

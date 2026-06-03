@@ -29,8 +29,8 @@
     "claims": [
       {
         "claim_id": "CLM-2025-0777",
-        "status": "paid",
-        "paid_amount": 1200.00,
+        "status": "adjusted",
+        "lines": [{ "status": "paid", "paid_amount": 1200.00 }],
         "payment_date": "February 20",
         "check_or_eft_number": "99100"
       }

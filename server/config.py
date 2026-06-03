@@ -26,13 +26,14 @@ class Settings(BaseSettings):
 
     # Vapi (voice mode)
     vapi_public_key: str = ""
-    vapi_private_key: str = ""
     vapi_webhook_secret: str = ""
     server_url: str = "http://localhost:8000"
 
     # Voice rendering
     voice_provider: str = "11labs"
-    voice_id: str = "rachel"
+    # ElevenLabs requires an actual voice ID, not a display name.
+    # 21m00Tcm4TlvDq8ikWAM = "Rachel" (default ElevenLabs voice).
+    voice_id: str = "21m00Tcm4TlvDq8ikWAM"
 
     # Output
     output_dir: str = "./results"

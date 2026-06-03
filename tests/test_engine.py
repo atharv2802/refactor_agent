@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from server.config import Settings
 from server.factory import build_engine, build_session
-from server.models import ClaimStatus, ConversationPhase
+from server.models import ClaimStatus, ConversationPhase, LineStatus
 from tests.conftest import FakeLLM, text_turn, tool_turn
 
 
@@ -27,7 +27,8 @@ def test_happy_path_records_claim_and_completes(call_request):
     script = [
         text_turn("Sure, the NPI is 1841293847."),
         tool_turn("record_claim_status", {
-            "claim_id": cid, "status": "paid", "paid_amount": 1100.0,
+            "claim_id": cid, "status": "adjusted",
+            "lines": [{"status": "paid", "paid_amount": 1100.0}],
             "payment_date": "January 25", "check_or_eft_number": "88432",
         }),
         text_turn("Could I get your name and a reference number?"),
@@ -44,14 +45,54 @@ def test_happy_path_records_claim_and_completes(call_request):
     assert session.phase == ConversationPhase.COMPLETE
     assert len(session.claims_completed) == 1
     result = session.claims_completed[0]
-    assert result.status == ClaimStatus.PAID
-    assert result.paid_amount == 1100.0
+    assert result.status == ClaimStatus.ADJUSTED
+    assert result.lines[0].status == LineStatus.PAID
+    assert result.lines[0].paid_amount == 1100.0
     assert session.rep_name == "Sarah"
+
+
+def test_agent_low_confidence_flags_claim_for_review(call_request):
+    cid = call_request.claims[0].claim_id
+    script = [
+        tool_turn("record_claim_status", {
+            "claim_id": cid, "status": "adjusted",
+            "lines": [{"status": "paid", "paid_amount": 1100.0}],
+            "check_or_eft_number": "88432",
+            "low_confidence_fields": ["check_or_eft_number"],
+        }),
+        text_turn("Could I get your name and a reference number?"),
+    ]
+    engine, session = _engine(call_request, script)
+    engine.opening_message()
+    engine.process_turn("It was paid, around 1100, EFT eight-eight... sorry, hard to hear.")
+
+    result = session.claims_completed[0]
+    assert result.needs_human_review is True
+    assert "low_confidence:check_or_eft_number" in result.review_reasons
+
+
+def test_appeal_deadline_auto_flags_claim_for_review(call_request):
+    cid = call_request.claims[0].claim_id
+    script = [
+        tool_turn("record_claim_status", {
+            "claim_id": cid, "status": "adjusted",
+            "lines": [{"status": "denied", "denial_reason_code": "CO-45"}],
+            "appeal_deadline": "April 30",
+        }),
+        text_turn("Thanks. Your name and a reference number?"),
+    ]
+    engine, session = _engine(call_request, script)
+    engine.opening_message()
+    engine.process_turn("Denied under CO-45, appeal by April 30.")
+
+    result = session.claims_completed[0]
+    assert result.needs_human_review is True
+    assert "denial_with_appeal_deadline" in result.review_reasons
 
 
 def test_invalid_claim_id_is_rejected_and_not_recorded(call_request):
     script = [
-        tool_turn("record_claim_status", {"claim_id": "WRONG", "status": "paid"}),
+        tool_turn("record_claim_status", {"claim_id": "WRONG", "status": "adjusted"}),
         text_turn("Sorry, let me re-check that claim number."),
     ]
     engine, session = _engine(call_request, script)

@@ -29,7 +29,7 @@
       {
         "claim_id": "CLM-2025-0500",
         "status": "pending",
-        "status_details": "still processing 5 to 7 business days"
+        "pending_timeline": "5 to 7 business days"
       }
     ],
     "rep_name": "Renee",

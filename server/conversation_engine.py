@@ -17,9 +17,10 @@ from typing import Any
 
 from server.guardrails import Guardrails
 from server.llm_client import LLMClient
-from server.models import CallSession, ConversationPhase
+from server.models import CallSession, ConversationPhase, TranscriptTurn
 from server.objectives.base import CallObjective
 from server.safety import AuditLog
+from server.tool_runner import execute_tool_call
 
 
 @dataclass
@@ -62,6 +63,21 @@ class ConversationEngine:
     @property
     def transcript(self) -> list[dict[str, Any]]:
         return list(self._messages)
+
+    def clean_transcript(self) -> list[TranscriptTurn]:
+        """The spoken conversation only (agent/rep turns), for persistence/display.
+
+        Excludes the system prompt (contains injected PII) and tool-call plumbing.
+        """
+        turns: list[TranscriptTurn] = []
+        for msg in self._messages:
+            role = msg.get("role")
+            content = msg.get("content")
+            if role == "assistant" and content:
+                turns.append(TranscriptTurn(role="agent", text=content))
+            elif role == "user" and content:
+                turns.append(TranscriptTurn(role="rep", text=content))
+        return turns
 
     def opening_message(self) -> str:
         """The agent speaks first; record it as the opening assistant turn."""
@@ -106,26 +122,14 @@ class ConversationEngine:
 
     # ------------------------------------------------------------- internals
     def _execute_tool(self, name: str, arguments: dict[str, Any]) -> str:
-        validation = self._guardrails.validate_tool_call(
-            self._session, name, arguments
+        return execute_tool_call(
+            objective=self._objective,
+            guardrails=self._guardrails,
+            audit=self._audit,
+            session=self._session,
+            name=name,
+            arguments=arguments,
         )
-        if not validation.ok:
-            self._audit.record(
-                self._session.call_id, "tool_rejected", tool=name, reason=validation.error
-            )
-            return f"ERROR: {validation.error}"
-
-        for warning in validation.warnings or []:
-            self._audit.record(self._session.call_id, "tool_warning", warning=warning)
-
-        result = self._objective.handle_tool_call(self._session, name, arguments)
-        self._audit.record(
-            self._session.call_id,
-            "tool_executed",
-            tool=name,
-            phase=self._session.phase.value,
-        )
-        return result.content
 
     def _finalize_text(self, text: str) -> EngineResult:
         safe_text, violations = self._guardrails.check_response(text)

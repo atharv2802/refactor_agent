@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from server.models import CallSession, ClaimStatus
+from server.models import CallSession, ClaimStatus, LineStatus
 
 # Substring matches are brittle (paraphrase evades, "AI department" false-positives).
 # Kept only as a last-resort backstop and audit signal.
@@ -113,13 +113,35 @@ class Guardrails:
                 error=f"status '{status}' is invalid. Use one of {sorted(valid_status)}.",
             )
 
-        amount = arguments.get("paid_amount")
-        if amount is not None:
-            if amount < 0:
+        valid_line_status = {s.value for s in LineStatus}
+        for idx, line in enumerate(arguments.get("lines") or []):
+            line_status = line.get("status")
+            if line_status not in valid_line_status:
                 return ToolValidation(
-                    ok=False, error="paid_amount cannot be negative."
+                    ok=False,
+                    error=(
+                        f"line {idx} status '{line_status}' is invalid. "
+                        f"Use one of {sorted(valid_line_status)}."
+                    ),
                 )
-            if amount > _AMOUNT_WARN_THRESHOLD:
-                warnings.append(f"amount_suspicious:{amount}")
+            err, warn = self._check_amount(line.get("paid_amount"), f"line {idx} paid_amount")
+            if err:
+                return ToolValidation(ok=False, error=err)
+            warnings.extend(warn)
+
+        err, warn = self._check_amount(arguments.get("total_paid_amount"), "total_paid_amount")
+        if err:
+            return ToolValidation(ok=False, error=err)
+        warnings.extend(warn)
 
         return ToolValidation(ok=True, warnings=warnings or None)
+
+    @staticmethod
+    def _check_amount(amount, label: str) -> tuple[str | None, list[str]]:
+        if amount is None:
+            return None, []
+        if amount < 0:
+            return f"{label} cannot be negative.", []
+        if amount > _AMOUNT_WARN_THRESHOLD:
+            return None, [f"amount_suspicious:{label}:{amount}"]
+        return None, []

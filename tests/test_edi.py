@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from server.edi import map_result_to_835, parse_837
-from server.models import ClaimStatus, ClaimStatusResult
+from server.models import ClaimLineResult, ClaimStatus, ClaimStatusResult, LineStatus
 
 SAMPLE_837 = (
     "NM1*85*2*NORTHSTAR MEDICAL GROUP*****XX*1841293847~"
@@ -37,21 +37,49 @@ def test_parse_837_handles_newline_terminators():
 
 def test_map_paid_claim_to_835():
     result = ClaimStatusResult(
-        claim_id="C1", status=ClaimStatus.PAID, paid_amount=1100.0,
+        claim_id="C1", status=ClaimStatus.ADJUSTED, total_paid_amount=1100.0,
         payment_date="2025-01-25", check_or_eft_number="88432",
+        lines=[ClaimLineResult(status=LineStatus.PAID, paid_amount=1100.0)],
     )
     m = map_result_to_835(result)
     assert m["CLP"]["claim_status_code"] == "1"
     assert m["AMT_AU"]["approved_amount"] == 1100.0
     assert m["TRN"]["reference"] == "88432"
+    assert m["lines"][0]["SVC"]["status"] == "paid"
 
 
-def test_map_denied_claim_splits_carc_code():
+def test_map_denied_line_splits_carc_code():
     result = ClaimStatusResult(
-        claim_id="C1", status=ClaimStatus.DENIED, denial_reason_code="CO-45",
-        denial_reason_description="exceeds fee schedule",
+        claim_id="C1", status=ClaimStatus.ADJUSTED,
+        lines=[ClaimLineResult(
+            status=LineStatus.DENIED, denial_reason_code="CO-45",
+            denial_reason_description="exceeds fee schedule",
+        )],
     )
     m = map_result_to_835(result)
     assert m["CLP"]["claim_status_code"] == "4"
-    assert m["CAS"]["group_code"] == "CO"
-    assert m["CAS"]["reason_code"] == "45"
+    assert m["lines"][0]["CAS"]["group_code"] == "CO"
+    assert m["lines"][0]["CAS"]["reason_code"] == "45"
+
+
+def test_map_partial_payment_status_code():
+    result = ClaimStatusResult(
+        claim_id="C1", status=ClaimStatus.ADJUSTED,
+        lines=[
+            ClaimLineResult(status=LineStatus.PAID, paid_amount=220.0),
+            ClaimLineResult(status=LineStatus.DENIED, denial_reason_code="CO-97"),
+        ],
+    )
+    m = map_result_to_835(result)
+    assert m["CLP"]["claim_status_code"] == "2"  # mixed paid + denied
+    assert len(m["lines"]) == 2
+
+
+def test_map_pending_claim():
+    result = ClaimStatusResult(
+        claim_id="C1", status=ClaimStatus.PENDING,
+        pending_reason="in review", pending_timeline="5 to 7 business days",
+    )
+    m = map_result_to_835(result)
+    assert m["CLP"]["claim_status_code"] == "23"
+    assert m["pending"]["timeline"] == "5 to 7 business days"

@@ -6,29 +6,46 @@ from evals.scorer import score_conversation, score_extraction, score_safety
 
 
 def test_extraction_money_tolerance_and_eft_normalization():
-    expected = [{"claim_id": "C1", "status": "paid", "paid_amount": 1100.0,
-                 "check_or_eft_number": "88432"}]
-    actual = [{"claim_id": "C1", "status": "paid", "paid_amount": 1100.40,
-               "check_or_eft_number": "  88432 "}]
+    expected = [{"claim_id": "C1", "status": "adjusted",
+                 "check_or_eft_number": "88432",
+                 "lines": [{"status": "paid", "paid_amount": 1100.0}]}]
+    actual = [{"claim_id": "C1", "status": "adjusted",
+               "check_or_eft_number": "  88432 ",
+               "lines": [{"status": "paid", "paid_amount": 1100.40}]}]
     assert score_extraction(expected, actual).score == 1.0
 
 
 def test_extraction_penalizes_wrong_status():
     # claim_id is the match key AND a scored field, so a status-only mismatch
     # scores 0.5 (claim_id correct, status wrong) and is flagged in details.
-    expected = [{"claim_id": "C1", "status": "paid"}]
-    actual = [{"claim_id": "C1", "status": "denied"}]
+    expected = [{"claim_id": "C1", "status": "adjusted"}]
+    actual = [{"claim_id": "C1", "status": "pending"}]
     result = score_extraction(expected, actual)
     assert result.score == 0.5
     assert any("status" in d for d in result.details)
 
 
 def test_extraction_text_uses_token_overlap_not_substring():
-    expected = [{"claim_id": "C1", "status": "denied",
-                 "denial_reason_description": "exceeds fee schedule allowable"}]
+    expected = [{"claim_id": "C1", "status": "adjusted",
+                 "lines": [{"status": "denied",
+                            "denial_reason_description": "exceeds fee schedule allowable"}]}]
     # Right tokens, different order/extra words -> should pass on overlap.
-    actual = [{"claim_id": "C1", "status": "denied",
-               "denial_reason_description": "the charge exceeds the fee schedule"}]
+    actual = [{"claim_id": "C1", "status": "adjusted",
+               "lines": [{"status": "denied",
+                          "denial_reason_description": "the charge exceeds the fee schedule"}]}]
+    assert score_extraction(expected, actual).score == 1.0
+
+
+def test_extraction_matches_lines_by_procedure_code():
+    expected = [{"claim_id": "C1", "status": "adjusted", "lines": [
+        {"procedure_code": "99214", "status": "paid", "paid_amount": 220.0},
+        {"procedure_code": "20610", "status": "denied", "denial_reason_code": "CO-97"},
+    ]}]
+    # Actual lines in reverse order -> matching by procedure_code should still score 1.0.
+    actual = [{"claim_id": "C1", "status": "adjusted", "lines": [
+        {"procedure_code": "20610", "status": "denied", "denial_reason_code": "CO-97"},
+        {"procedure_code": "99214", "status": "paid", "paid_amount": 220.0},
+    ]}]
     assert score_extraction(expected, actual).score == 1.0
 
 
@@ -57,3 +74,15 @@ def test_conversation_checks():
     score = score_conversation(props, agent_messages=["hi"], turns=3,
                                session=session, call_request=call_request)
     assert score.score == 1.0
+
+
+def test_conversation_navigated_ivr():
+    props = {"navigated_ivr": True}
+    session = {"claims_completed": [], "rep_name": None}
+    call_request = {"claims": []}
+    passed = score_conversation(props, agent_messages=["Claims, please."], turns=1,
+                                session=session, call_request=call_request)
+    failed = score_conversation(props, agent_messages=["Hello there."], turns=1,
+                                session=session, call_request=call_request)
+    assert passed.score == 1.0
+    assert failed.score == 0.0

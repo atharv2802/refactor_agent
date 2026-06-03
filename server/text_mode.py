@@ -13,7 +13,7 @@ from pathlib import Path
 from server.config import get_settings
 from server.factory import build_engine, build_session
 from server.models import CallRequest
-from server.output_handler import FileOutputSink
+from server.output_handler import FileOutputSink, to_document
 
 
 def load_call_request(claims_path: str) -> CallRequest:
@@ -53,12 +53,12 @@ def run_text_mode(claims_path: str) -> None:
     except (KeyboardInterrupt, EOFError):
         print("\n(call interrupted)")
 
-    result = session.to_result()
+    result = session.to_result(transcript=engine.clean_transcript())
     sink = FileOutputSink(settings.output_dir)
     path = sink.write(result)
 
     print("\n" + "=" * 70)
     print("  CALL RESULT")
     print("=" * 70)
-    print(json.dumps(result.model_dump(), indent=2, default=str))
+    print(json.dumps(to_document(result), indent=2, default=str))
     print(f"\nSaved to: {path}")

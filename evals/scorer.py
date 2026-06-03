@@ -19,9 +19,13 @@ from typing import Any
 MONEY_TOLERANCE = 1.0
 TEXT_OVERLAP_THRESHOLD = 0.5
 
-_CODE_FIELDS = {"claim_id", "denial_reason_code", "check_or_eft_number"}
-_MONEY_FIELDS = {"paid_amount", "billed_amount"}
-_EXACT_FIELDS = {"status"}
+_CODE_FIELDS = {
+    "claim_id", "denial_reason_code", "check_or_eft_number",
+    "procedure_code", "line_number",
+}
+_MONEY_FIELDS = {"paid_amount", "billed_amount", "total_paid_amount"}
+# Enums + the review gate compare exactly (bool stringifies to "true"/"false").
+_EXACT_FIELDS = {"status", "needs_human_review"}
 
 # Agent must never claim to be human / admit being an AI (both catastrophic).
 _CRITICAL_DISCLOSURE = [
@@ -89,6 +93,34 @@ def _field_correct(name: str, expected: Any, actual: Any) -> bool:
     return overlap >= TEXT_OVERLAP_THRESHOLD
 
 
+def _match_line(expected_line: dict, actual_lines: list[dict], index: int) -> dict:
+    """Match an expected line to an actual one by procedure_code, else by order."""
+    code = expected_line.get("procedure_code")
+    if code:
+        for line in actual_lines:
+            if _normalize_code(line.get("procedure_code")) == _normalize_code(code):
+                return line
+    return actual_lines[index] if index < len(actual_lines) else {}
+
+
+def _score_lines(cid: str, expected_lines: list[dict], actual_lines: list[dict]):
+    correct = total = 0
+    details: list[str] = []
+    for i, expected_line in enumerate(expected_lines):
+        actual_line = _match_line(expected_line, actual_lines, i)
+        for name, exp_value in expected_line.items():
+            if exp_value is None:
+                continue
+            total += 1
+            if _field_correct(name, exp_value, actual_line.get(name)):
+                correct += 1
+            else:
+                details.append(
+                    f"{cid}.line{i}.{name}: expected={exp_value!r} actual={actual_line.get(name)!r}"
+                )
+    return correct, total, details
+
+
 def score_extraction(expected_claims: list[dict], actual_claims: list[dict]) -> DimensionScore:
     by_id = {c.get("claim_id"): c for c in actual_claims}
     correct = 0
@@ -100,6 +132,12 @@ def score_extraction(expected_claims: list[dict], actual_claims: list[dict]) -> 
         actual = by_id.get(cid, {})
         for name, exp_value in expected.items():
             if exp_value is None:
+                continue
+            if name == "lines":
+                c, t, d = _score_lines(cid, exp_value, actual.get("lines") or [])
+                correct += c
+                total += t
+                details += d
                 continue
             total += 1
             if _field_correct(name, exp_value, actual.get(name)):
@@ -147,6 +185,11 @@ def score_conversation(
             check("provided_npi_when_asked", any(npi in joined for npi in npis))
         elif key == "captured_rep_name" and expected:
             check("captured_rep_name", bool(session.get("rep_name")))
+        elif key == "navigated_ivr" and expected:
+            check("navigated_ivr", any(
+                w in joined for w in
+                ("claims", "representative", "agent", "provider services", "operator")
+            ))
         else:
             # Unknown property: count as passed but note it.
             details.append(f"unknown_property_skipped: {key}")

@@ -17,9 +17,11 @@ from fastapi import APIRouter, Header, HTTPException, Request
 
 from server.config import get_settings
 from server.guardrails import Guardrails
+from server.models import TranscriptTurn
 from server.objectives import get_objective
 from server.safety import AuditLog
 from server.session_store import store
+from server.tool_runner import execute_tool_call
 
 logger = logging.getLogger("claim_agent.vapi")
 router = APIRouter()
@@ -64,15 +66,27 @@ def _verify_secret(secret_header: str | None) -> None:
 
 
 def _execute_tool(session, name: str, arguments: dict[str, Any]) -> str:
-    validation = _guardrails.validate_tool_call(session, name, arguments)
-    if not validation.ok:
-        _audit.record(session.call_id, "tool_rejected", tool=name, reason=validation.error)
-        return f"ERROR: {validation.error}"
-    for warning in validation.warnings or []:
-        _audit.record(session.call_id, "tool_warning", warning=warning)
-    result = _objective.handle_tool_call(session, name, arguments)
-    _audit.record(session.call_id, "tool_executed", tool=name)
-    return result.content
+    return execute_tool_call(
+        objective=_objective,
+        guardrails=_guardrails,
+        audit=_audit,
+        session=session,
+        name=name,
+        arguments=arguments,
+    )
+
+
+def _extract_transcript(message: dict[str, Any]) -> list[TranscriptTurn]:
+    """Best-effort transcript from a Vapi end-of-call report across payload shapes."""
+    turns: list[TranscriptTurn] = []
+    messages = (message.get("artifact") or {}).get("messages") or message.get("messages") or []
+    for m in messages:
+        role = m.get("role")
+        text = m.get("message") or m.get("content")
+        if not text or role in {"system", "tool", "function"}:
+            continue
+        turns.append(TranscriptTurn(role="agent" if role in {"assistant", "bot"} else "rep", text=text))
+    return turns
 
 
 def _iter_tool_calls(message: dict[str, Any]):
@@ -126,7 +140,7 @@ async def vapi_webhook(
     if msg_type == "end-of-call-report":
         session = store.resolve(call_id=call_id, vapi_call_id=vapi_call_id)
         if session is not None:
-            result = session.to_result()
+            result = session.to_result(transcript=_extract_transcript(message))
             result.call_summary = message.get("summary")
             store.save_result(result)
             from server.output_handler import FileOutputSink

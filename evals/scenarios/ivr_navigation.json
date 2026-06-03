@@ -1,0 +1,49 @@
+{
+  "scenario_name": "ivr_navigation",
+  "description": "Payer answers with an automated IVR menu before a human. Agent must navigate to claims/representative without dumping claim data to the machine, then ask for paid details (rep does not volunteer them).",
+  "call_request": {
+    "payer_name": "Aetna",
+    "claims": [
+      {
+        "claim_id": "CLM-2025-0301",
+        "provider_npi": "1841293847",
+        "provider_tax_id": "954321987",
+        "patient_member_id": "AET330033003",
+        "patient_first_name": "Noah",
+        "patient_last_name": "Brooks",
+        "patient_date_of_birth": "02/11/1983",
+        "date_of_service": "01/18/2025",
+        "billed_amount": 900.00
+      }
+    ]
+  },
+  "scripted_rep_turns": [
+    "Thank you for calling Aetna provider services. For claim status, say 'claims' or press 1. For eligibility, say 'eligibility' or press 2. To speak with a representative, say 'representative'.",
+    "Okay, connecting you. Please hold while we reach a representative.",
+    "Hi, claims department, this is the line for providers. Can I get your provider NPI?",
+    "Thanks, and the member ID for the patient?",
+    "Alright, I found that claim. It was processed and paid.",
+    "Sure — we paid 900 dollars on March 3rd, and it went out as EFT number 70012.",
+    "My name is Dana and the reference number is AET-IVR-1.",
+    "Goodbye."
+  ],
+  "expected_results": {
+    "claims": [
+      {
+        "claim_id": "CLM-2025-0301",
+        "status": "adjusted",
+        "lines": [{ "status": "paid", "paid_amount": 900.00 }],
+        "payment_date": "March 3",
+        "check_or_eft_number": "70012"
+      }
+    ],
+    "rep_name": "Dana",
+    "reference_number": "AET-IVR-1"
+  },
+  "expected_conversation_properties": {
+    "max_turns": 14,
+    "navigated_ivr": true,
+    "recorded_all_claims": true,
+    "captured_rep_name": true
+  }
+}

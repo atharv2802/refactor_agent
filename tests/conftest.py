@@ -15,6 +15,23 @@ from server.llm_client import AssistantTurn, ToolCall
 from server.models import CallRequest
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_settings(monkeypatch):
+    """Keep tests independent of a developer's local ``.env``.
+
+    Settings normally load from ``.env``; if it defines ``VAPI_WEBHOOK_SECRET``
+    the webhook starts rejecting unsigned test requests. Force an empty secret
+    (env vars take precedence over the ``.env`` file) so the default path is
+    open, while ``test_webhook_rejects_bad_secret`` still patches its own.
+    """
+    from server.config import get_settings
+
+    monkeypatch.setenv("VAPI_WEBHOOK_SECRET", "")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 class FakeLLM:
     """Returns scripted ``AssistantTurn``s in order, ignoring inputs."""
 

@@ -22,26 +22,33 @@ from fastapi.staticfiles import StaticFiles
 from server.config import get_settings
 from server.edi import parse_837
 from server.models import CallRequest
+from server.output_handler import to_document
 from server.session_store import store
 from server.vapi_webhook import build_assistant_config, router as vapi_router
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-WEB_DIR = ROOT_DIR / "web"
-DIST_DIR = WEB_DIR / "dist"  # Vite production build (preferred when present)
+DIST_DIR = ROOT_DIR / "web" / "dist"  # Vite production build of the React SPA
 
 app = FastAPI(title="Claim Status Voice Agent")
 app.include_router(vapi_router)
 
-# Serve the built React SPA's hashed assets, if a production build exists.
+# Serve the built React SPA's hashed assets when a production build exists.
 if (DIST_DIR / "assets").is_dir():
     app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="assets")
 
 
 @app.get("/")
 def index() -> FileResponse:
-    # Prefer the built SPA; fall back to the no-build vanilla page.
     built = DIST_DIR / "index.html"
-    return FileResponse(built if built.exists() else WEB_DIR / "index.html")
+    if not built.exists():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Frontend build not found. Build the SPA first: "
+                "`npm --prefix frontend install && npm --prefix frontend run build`."
+            ),
+        )
+    return FileResponse(built)
 
 
 @app.get("/sample_claims.json")
@@ -82,4 +89,4 @@ def get_results(call_id: str) -> JSONResponse:
     result = store.get_result(call_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Result not ready")
-    return JSONResponse(result.model_dump())
+    return JSONResponse(to_document(result))

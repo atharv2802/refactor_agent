@@ -29,10 +29,16 @@
     "claims": [
       {
         "claim_id": "CLM-2025-0042",
-        "status": "denied",
-        "denial_reason_code": "CO-45",
-        "denial_reason_description": "charges exceed fee schedule allowable amount",
-        "appeal_deadline": "April 30"
+        "status": "adjusted",
+        "lines": [
+          {
+            "status": "denied",
+            "denial_reason_code": "CO-45",
+            "denial_reason_description": "charges exceed fee schedule allowable amount"
+          }
+        ],
+        "appeal_deadline": "April 30",
+        "needs_human_review": true
       }
     ],
     "rep_name": "Marcus",

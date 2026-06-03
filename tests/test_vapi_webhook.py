@@ -45,8 +45,8 @@ def test_function_call_records_claim_and_end_of_call_saves_result():
             "call": {"id": "vapi-abc", "metadata": {"call_id": call_id}},
             "functionCall": {
                 "name": "record_claim_status",
-                "parameters": {"claim_id": "CLM-2025-0001", "status": "paid",
-                               "paid_amount": 1100.0},
+                "parameters": {"claim_id": "CLM-2025-0001", "status": "adjusted",
+                               "lines": [{"status": "paid", "paid_amount": 1100.0}]},
             },
         }
     }
@@ -57,11 +57,19 @@ def test_function_call_records_claim_and_end_of_call_saves_result():
 
     end = {"message": {"type": "end-of-call-report",
                        "call": {"id": "vapi-abc", "metadata": {"call_id": call_id}},
-                       "summary": "Call done."}}
+                       "summary": "Call done.",
+                       "artifact": {"messages": [
+                           {"role": "bot", "message": "Hi, billing department here."},
+                           {"role": "user", "message": "It was paid 1100."},
+                       ]}}}
     assert client.post("/vapi/webhook", json=end).status_code == 200
     result = client.get(f"/api/results/{call_id}")
     assert result.status_code == 200
-    assert result.json()["claims"][0]["status"] == "paid"
+    data = result.json()
+    assert data["claims"][0]["status"] == "adjusted"
+    assert data["claims"][0]["lines"][0]["status"] == "paid"
+    assert len(data["transcript"]) == 2
+    assert data["transcript"][0]["role"] == "agent"
 
 
 def test_tool_calls_variant_with_string_arguments():
@@ -74,13 +82,13 @@ def test_tool_calls_variant_with_string_arguments():
                 "id": "tc1",
                 "function": {"name": "record_claim_status",
                              "arguments": json.dumps({"claim_id": "CLM-2025-0001",
-                                                      "status": "denied"})},
+                                                      "status": "not_found"})},
             }],
         }
     }
     r = client.post("/vapi/webhook", json=body)
     assert r.status_code == 200
-    assert store.get(call_id).claims_completed[0].status.value == "denied"
+    assert store.get(call_id).claims_completed[0].status.value == "not_found"
 
 
 def test_webhook_rejects_bad_secret(monkeypatch):

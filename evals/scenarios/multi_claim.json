@@ -54,22 +54,27 @@
     "claims": [
       {
         "claim_id": "CLM-A-100",
-        "status": "paid",
-        "paid_amount": 500.00,
+        "status": "adjusted",
+        "lines": [{ "status": "paid", "paid_amount": 500.00 }],
         "payment_date": "January 20",
         "check_or_eft_number": "5501"
       },
       {
         "claim_id": "CLM-B-200",
-        "status": "denied",
-        "denial_reason_code": "CO-16",
-        "denial_reason_description": "missing information",
+        "status": "adjusted",
+        "lines": [
+          {
+            "status": "denied",
+            "denial_reason_code": "CO-16",
+            "denial_reason_description": "missing information"
+          }
+        ],
         "appeal_deadline": "March 15"
       },
       {
         "claim_id": "CLM-C-300",
         "status": "pending",
-        "status_details": "in review 5 to 7 business days"
+        "pending_timeline": "5 to 7 business days"
       }
     ],
     "rep_name": "Priya",
