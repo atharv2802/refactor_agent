@@ -1,0 +1,42 @@
+{
+  "scenario_name": "not_found",
+  "description": "Rep cannot locate the claim after two attempts. Agent records not_found and wraps up.",
+  "call_request": {
+    "payer_name": "Cigna",
+    "claims": [
+      {
+        "claim_id": "CLM-2025-9999",
+        "provider_npi": "1841293847",
+        "provider_tax_id": "954321987",
+        "patient_member_id": "CIG445566778",
+        "patient_first_name": "Elena",
+        "patient_last_name": "Ford",
+        "patient_date_of_birth": "04/04/1988",
+        "date_of_service": "02/14/2025",
+        "billed_amount": 215.00
+      }
+    ]
+  },
+  "scripted_rep_turns": [
+    "Provider services. What member ID are you calling about?",
+    "Hmm, I'm not finding anything under that ID. Can you give me the date of service?",
+    "I still don't see any claim on file for that member and date. There's nothing in our system.",
+    "I'm sorry, there's really nothing here. My name is Tom, reference CIG-REF-0001.",
+    "Goodbye."
+  ],
+  "expected_results": {
+    "claims": [
+      {
+        "claim_id": "CLM-2025-9999",
+        "status": "not_found"
+      }
+    ],
+    "rep_name": "Tom",
+    "reference_number": "CIG-REF-0001"
+  },
+  "expected_conversation_properties": {
+    "max_turns": 10,
+    "recorded_all_claims": true,
+    "captured_rep_name": true
+  }
+}

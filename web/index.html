@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Claim Status Voice Agent</title>
+  <style>
+    :root {
+      --bg: #f4f6f9;
+      --panel: #ffffff;
+      --ink: #1f2a37;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --brand: #2563eb;
+      --brand-dark: #1e40af;
+      --ok: #047857;
+      --warn: #b45309;
+      --danger: #b91c1c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--ink);
+      font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    header {
+      background: var(--brand-dark); color: #fff; padding: 18px 24px;
+    }
+    header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+    header p { margin: 4px 0 0; font-size: 13px; opacity: .85; }
+    main {
+      display: grid; grid-template-columns: 380px 1fr 1fr; gap: 16px;
+      padding: 16px; max-width: 1400px; margin: 0 auto;
+    }
+    .panel {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+      padding: 16px; display: flex; flex-direction: column; min-height: 70vh;
+    }
+    .panel h2 {
+      margin: 0 0 12px; font-size: 13px; text-transform: uppercase;
+      letter-spacing: .06em; color: var(--muted);
+    }
+    textarea {
+      width: 100%; flex: 1; min-height: 220px; resize: vertical;
+      border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .row { display: flex; gap: 8px; margin-top: 12px; }
+    button {
+      flex: 1; padding: 11px 14px; border: 0; border-radius: 8px; cursor: pointer;
+      font-weight: 600; font-size: 14px;
+    }
+    #startBtn { background: var(--brand); color: #fff; }
+    #startBtn:disabled { background: #93c5fd; cursor: not-allowed; }
+    #endBtn { background: #fff; color: var(--danger); border: 1px solid var(--danger); }
+    #endBtn:disabled { opacity: .4; cursor: not-allowed; }
+    .status {
+      margin-top: 12px; padding: 8px 12px; border-radius: 8px; font-size: 13px;
+      background: #f1f5f9; color: var(--muted); display: flex; align-items: center; gap: 8px;
+    }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+    .status.idle .dot { background: #94a3b8; }
+    .status.connecting .dot { background: var(--warn); animation: pulse 1s infinite; }
+    .status.active .dot { background: var(--ok); animation: pulse 1s infinite; }
+    .status.complete .dot { background: var(--brand); }
+    .status.error .dot { background: var(--danger); }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+    .transcript { flex: 1; overflow-y: auto; }
+    .bubble { margin-bottom: 10px; max-width: 90%; }
+    .bubble .who { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+    .bubble .text {
+      padding: 8px 12px; border-radius: 10px; background: #f1f5f9; display: inline-block;
+    }
+    .bubble.agent { margin-left: auto; text-align: right; }
+    .bubble.agent .text { background: #dbeafe; color: var(--brand-dark); }
+    pre {
+      flex: 1; overflow: auto; background: #0f172a; color: #e2e8f0;
+      border-radius: 8px; padding: 12px; font-size: 12px; margin: 0;
+    }
+    .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+    .seg { display: flex; gap: 8px; margin-bottom: 8px; }
+    .seg button {
+      flex: 1; padding: 6px; font-size: 12px; background: #eef2ff; color: var(--brand-dark);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Claim Status Voice Agent</h1>
+    <p>Speak as the payer representative. The agent calls to check claim status and extracts structured results live.</p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>Claims</h2>
+      <div class="seg">
+        <button id="loadSampleBtn" type="button">Load JSON sample</button>
+        <button id="load837Btn" type="button">Parse 837 sample</button>
+      </div>
+      <textarea id="claimsInput" spellcheck="false"></textarea>
+      <p class="hint">Paste a CallRequest JSON (payer_name + 1-3 claims), or parse an 837.</p>
+      <div class="row">
+        <button id="startBtn" type="button">Start Call</button>
+        <button id="endBtn" type="button" disabled>End Call</button>
+      </div>
+      <div id="status" class="status idle"><span class="dot"></span><span id="statusText">Idle</span></div>
+    </section>
+
+    <section class="panel">
+      <h2>Live Transcript</h2>
+      <div id="transcript" class="transcript"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Extracted Result</h2>
+      <pre id="results">No results yet. Start a call and complete it to see structured output.</pre>
+    </section>
+  </main>
+
+  <script type="module">
+    import Vapi from "https://esm.sh/@vapi-ai/web@2.3.8";
+
+    const SAMPLE_837 = `ISA*00*          *00*          *ZZ*NORTHSTARMED   *ZZ*BLUESHIELDCA   *250110*1200*^*00501*000000001*0*P*:~
+NM1*85*2*NORTHSTAR MEDICAL GROUP*****XX*1841293847~
+REF*EI*954321987~
+NM1*IL*1*GONZALEZ*MARIA****MI*BSC123456789~
+DMG*D8*19850314*F~
+CLM*CLM-2025-0001*1450.00***11:B:1*Y*A*Y*I~
+DTP*472*D8*20250110~`;
+
+    const $ = (id) => document.getElementById(id);
+    let vapi = null;
+    let callId = null;
+
+    function setStatus(state, text) {
+      const el = $("status");
+      el.className = `status ${state}`;
+      $("statusText").textContent = text;
+    }
+
+    function addBubble(who, text) {
+      const wrap = document.createElement("div");
+      wrap.className = `bubble ${who === "Agent" ? "agent" : "rep"}`;
+      wrap.innerHTML = `<div class="who">${who}</div><div class="text"></div>`;
+      wrap.querySelector(".text").textContent = text;
+      $("transcript").appendChild(wrap);
+      $("transcript").scrollTop = $("transcript").scrollHeight;
+    }
+
+    async function init() {
+      try {
+        const res = await fetch("/api/config");
+        const { vapi_public_key } = await res.json();
+        if (!vapi_public_key) {
+          setStatus("error", "Vapi public key not configured on server (.env).");
+          return;
+        }
+        vapi = new Vapi(vapi_public_key);
+        vapi.on("call-start", () => setStatus("active", "In call — speak as the rep"));
+        vapi.on("call-end", onCallEnd);
+        vapi.on("error", (e) => setStatus("error", "Error: " + (e?.message || e)));
+        vapi.on("message", onMessage);
+      } catch (e) {
+        setStatus("error", "Init failed: " + e.message);
+      }
+    }
+
+    function onMessage(msg) {
+      if (msg.type === "transcript" && msg.transcriptType === "final") {
+        addBubble(msg.role === "assistant" ? "Agent" : "Rep", msg.transcript);
+      }
+    }
+
+    async function startCall() {
+      let callRequest;
+      try {
+        callRequest = JSON.parse($("claimsInput").value);
+      } catch (e) {
+        setStatus("error", "Claims JSON is invalid.");
+        return;
+      }
+      setStatus("connecting", "Creating session…");
+      $("startBtn").disabled = true;
+      try {
+        const created = await fetch("/api/claims", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(callRequest),
+        }).then((r) => r.json());
+        callId = created.call_id;
+
+        const assistant = await fetch(`/api/assistant/${callId}`).then((r) => r.json());
+        setStatus("connecting", "Connecting to call…");
+        await vapi.start(assistant);
+        $("endBtn").disabled = false;
+      } catch (e) {
+        setStatus("error", "Could not start: " + e.message);
+        $("startBtn").disabled = false;
+      }
+    }
+
+    function endCall() {
+      if (vapi) vapi.stop();
+    }
+
+    async function onCallEnd() {
+      setStatus("complete", "Call complete — fetching results…");
+      $("startBtn").disabled = false;
+      $("endBtn").disabled = true;
+      if (!callId) return;
+      // Results are written by the end-of-call webhook; poll briefly.
+      for (let i = 0; i < 6; i++) {
+        const r = await fetch(`/api/results/${callId}`);
+        if (r.ok) {
+          $("results").textContent = JSON.stringify(await r.json(), null, 2);
+          setStatus("complete", "Call complete");
+          return;
+        }
+        await new Promise((res) => setTimeout(res, 1000));
+      }
+      setStatus("complete", "Call complete (results pending)");
+    }
+
+    async function loadSample() {
+      const r = await fetch("/sample_claims.json").catch(() => null);
+      if (r && r.ok) {
+        $("claimsInput").value = JSON.stringify(await r.json(), null, 2);
+      } else {
+        $("claimsInput").value = JSON.stringify({
+          payer_name: "Blue Shield of California",
+          claims: [{
+            claim_id: "CLM-2025-0001", provider_npi: "1841293847",
+            provider_tax_id: "954321987", patient_member_id: "BSC123456789",
+            patient_first_name: "Maria", patient_last_name: "Gonzalez",
+            patient_date_of_birth: "03/14/1985", date_of_service: "01/10/2025",
+            billed_amount: 1450.0,
+          }],
+        }, null, 2);
+      }
+    }
+
+    async function load837() {
+      setStatus("connecting", "Parsing 837…");
+      try {
+        const parsed = await fetch("/api/claims/837", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ edi: SAMPLE_837, payer_name: "Blue Shield of California" }),
+        }).then((r) => r.json());
+        $("claimsInput").value = JSON.stringify(parsed, null, 2);
+        setStatus("idle", "837 parsed");
+      } catch (e) {
+        setStatus("error", "837 parse failed: " + e.message);
+      }
+    }
+
+    $("startBtn").addEventListener("click", startCall);
+    $("endBtn").addEventListener("click", endCall);
+    $("loadSampleBtn").addEventListener("click", loadSample);
+    $("load837Btn").addEventListener("click", load837);
+
+    loadSample();
+    init();
+  </script>
+</body>
+</html>

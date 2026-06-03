@@ -1,0 +1,47 @@
+{
+  "scenario_name": "denied_claim",
+  "description": "Single denied claim with CARC code, reason, and appeal deadline.",
+  "call_request": {
+    "payer_name": "Aetna",
+    "claims": [
+      {
+        "claim_id": "CLM-2025-0042",
+        "provider_npi": "1841293847",
+        "provider_tax_id": "954321987",
+        "patient_member_id": "AET556677889",
+        "patient_first_name": "David",
+        "patient_last_name": "Nguyen",
+        "patient_date_of_birth": "07/22/1978",
+        "date_of_service": "02/03/2025",
+        "billed_amount": 980.00
+      }
+    ]
+  },
+  "scripted_rep_turns": [
+    "Provider services, can I have your NPI please?",
+    "And the member ID?",
+    "Thanks. I'm looking at that claim now. Unfortunately it was denied.",
+    "It was denied under code CO-45, charges exceed the fee schedule allowable amount. You have until April 30th to file an appeal.",
+    "My name is Marcus and the reference number is AET-REF-77821.",
+    "Goodbye."
+  ],
+  "expected_results": {
+    "claims": [
+      {
+        "claim_id": "CLM-2025-0042",
+        "status": "denied",
+        "denial_reason_code": "CO-45",
+        "denial_reason_description": "charges exceed fee schedule allowable amount",
+        "appeal_deadline": "April 30"
+      }
+    ],
+    "rep_name": "Marcus",
+    "reference_number": "AET-REF-77821"
+  },
+  "expected_conversation_properties": {
+    "max_turns": 12,
+    "recorded_all_claims": true,
+    "asked_for_rep_name": true,
+    "captured_rep_name": true
+  }
+}

@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/api.ts","./src/main.tsx","./src/types.ts","./src/usevapi.ts","./src/components/claimspanel.tsx","./src/components/panel.tsx","./src/components/resultspanel.tsx","./src/components/statusbadge.tsx","./src/components/transcriptpanel.tsx"],"version":"5.9.3"}

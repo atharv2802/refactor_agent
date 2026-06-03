@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+.env
+results/
+evals/results/*.json
+.DS_Store
+
+# frontend
+node_modules/
+web/dist/
+frontend/dist/

@@ -1,0 +1,84 @@
+{
+  "scenario_name": "multi_claim",
+  "description": "Three claims in one call: paid, denied, and pending. Tests transitions and per-claim mapping.",
+  "call_request": {
+    "payer_name": "UnitedHealthcare",
+    "claims": [
+      {
+        "claim_id": "CLM-A-100",
+        "provider_npi": "1841293847",
+        "provider_tax_id": "954321987",
+        "patient_member_id": "UHC100100100",
+        "patient_first_name": "Ana",
+        "patient_last_name": "Reyes",
+        "patient_date_of_birth": "05/05/1990",
+        "date_of_service": "01/05/2025",
+        "billed_amount": 600.00
+      },
+      {
+        "claim_id": "CLM-B-200",
+        "provider_npi": "1841293847",
+        "provider_tax_id": "954321987",
+        "patient_member_id": "UHC200200200",
+        "patient_first_name": "Ben",
+        "patient_last_name": "Carter",
+        "patient_date_of_birth": "09/19/1982",
+        "date_of_service": "01/06/2025",
+        "billed_amount": 750.00
+      },
+      {
+        "claim_id": "CLM-C-300",
+        "provider_npi": "1841293847",
+        "provider_tax_id": "954321987",
+        "patient_member_id": "UHC300300300",
+        "patient_first_name": "Cara",
+        "patient_last_name": "Diaz",
+        "patient_date_of_birth": "12/30/1995",
+        "date_of_service": "01/07/2025",
+        "billed_amount": 410.00
+      }
+    ]
+  },
+  "scripted_rep_turns": [
+    "Provider line, what's your NPI?",
+    "Go ahead with the first member ID.",
+    "That first claim was paid, 500 dollars, paid on January 20th, check number 5501.",
+    "Sure, go ahead with the next one.",
+    "That second one was denied, code CO-16, missing information, appeal deadline March 15th.",
+    "Okay, last one?",
+    "The third claim is still pending, it's in review and should finish in 5 to 7 business days.",
+    "My name is Priya, reference number UHC-REF-33019.",
+    "Bye now."
+  ],
+  "expected_results": {
+    "claims": [
+      {
+        "claim_id": "CLM-A-100",
+        "status": "paid",
+        "paid_amount": 500.00,
+        "payment_date": "January 20",
+        "check_or_eft_number": "5501"
+      },
+      {
+        "claim_id": "CLM-B-200",
+        "status": "denied",
+        "denial_reason_code": "CO-16",
+        "denial_reason_description": "missing information",
+        "appeal_deadline": "March 15"
+      },
+      {
+        "claim_id": "CLM-C-300",
+        "status": "pending",
+        "status_details": "in review 5 to 7 business days"
+      }
+    ],
+    "rep_name": "Priya",
+    "reference_number": "UHC-REF-33019"
+  },
+  "expected_conversation_properties": {
+    "max_turns": 16,
+    "recorded_all_claims": true,
+    "asked_for_rep_name": true,
+    "captured_rep_name": true
+  }
+}

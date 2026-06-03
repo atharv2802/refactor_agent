@@ -1,0 +1,43 @@
+{
+  "scenario_name": "edge_cases",
+  "description": "Hold, repeat request, and a vague pending status. Tests patience and extraction from ambiguity.",
+  "call_request": {
+    "payer_name": "Humana",
+    "claims": [
+      {
+        "claim_id": "CLM-2025-0500",
+        "provider_npi": "1841293847",
+        "provider_tax_id": "954321987",
+        "patient_member_id": "HUM778899001",
+        "patient_first_name": "Grace",
+        "patient_last_name": "Lim",
+        "patient_date_of_birth": "08/08/1992",
+        "date_of_service": "01/28/2025",
+        "billed_amount": 530.00
+      }
+    ]
+  },
+  "scripted_rep_turns": [
+    "Provider services. Let me put you on a brief hold while I pull this up.",
+    "Thanks for holding. Sorry, can you repeat the member ID for me?",
+    "Okay, found it. It's still processing, should be about 5 to 7 business days.",
+    "That's all I have on it right now. My name is Renee, reference HUM-REF-2210.",
+    "Take care, bye."
+  ],
+  "expected_results": {
+    "claims": [
+      {
+        "claim_id": "CLM-2025-0500",
+        "status": "pending",
+        "status_details": "still processing 5 to 7 business days"
+      }
+    ],
+    "rep_name": "Renee",
+    "reference_number": "HUM-REF-2210"
+  },
+  "expected_conversation_properties": {
+    "max_turns": 12,
+    "recorded_all_claims": true,
+    "captured_rep_name": true
+  }
+}

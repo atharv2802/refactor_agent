@@ -1,0 +1,49 @@
+{
+  "scenario_name": "happy_path",
+  "description": "Single paid claim. Rep verifies identity then gives full payment details.",
+  "call_request": {
+    "payer_name": "Blue Shield of California",
+    "claims": [
+      {
+        "claim_id": "CLM-2025-0001",
+        "provider_npi": "1841293847",
+        "provider_tax_id": "954321987",
+        "patient_member_id": "BSC123456789",
+        "patient_first_name": "Maria",
+        "patient_last_name": "Gonzalez",
+        "patient_date_of_birth": "03/14/1985",
+        "date_of_service": "01/10/2025",
+        "billed_amount": 1450.00
+      }
+    ]
+  },
+  "scripted_rep_turns": [
+    "Thanks for calling provider services, this is the claims line. Can I get your provider NPI?",
+    "Got it. And the member ID for the patient?",
+    "And the patient's date of birth?",
+    "What was the date of service?",
+    "Okay, I see that claim. It was processed and paid. We paid 1,100 dollars on January 25th, and it went out as EFT number 88432.",
+    "You're welcome! My name is Sarah, and your reference number is REF-2025-0456.",
+    "You too, goodbye."
+  ],
+  "expected_results": {
+    "claims": [
+      {
+        "claim_id": "CLM-2025-0001",
+        "status": "paid",
+        "paid_amount": 1100.00,
+        "payment_date": "January 25",
+        "check_or_eft_number": "88432"
+      }
+    ],
+    "rep_name": "Sarah",
+    "reference_number": "REF-2025-0456"
+  },
+  "expected_conversation_properties": {
+    "max_turns": 12,
+    "recorded_all_claims": true,
+    "asked_for_rep_name": true,
+    "provided_npi_when_asked": true,
+    "captured_rep_name": true
+  }
+}

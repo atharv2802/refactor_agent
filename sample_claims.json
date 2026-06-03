@@ -1,0 +1,28 @@
+{
+  "payer_name": "Blue Shield of California",
+  "payer_phone_number": "+18005551234",
+  "claims": [
+    {
+      "claim_id": "CLM-2025-0001",
+      "provider_npi": "1841293847",
+      "provider_tax_id": "954321987",
+      "patient_member_id": "BSC123456789",
+      "patient_first_name": "Maria",
+      "patient_last_name": "Gonzalez",
+      "patient_date_of_birth": "03/14/1985",
+      "date_of_service": "01/10/2025",
+      "billed_amount": 1450.00
+    },
+    {
+      "claim_id": "CLM-2025-0002",
+      "provider_npi": "1841293847",
+      "provider_tax_id": "954321987",
+      "patient_member_id": "BSC987654321",
+      "patient_first_name": "James",
+      "patient_last_name": "Whitfield",
+      "patient_date_of_birth": "11/02/1970",
+      "date_of_service": "01/12/2025",
+      "billed_amount": 320.50
+    }
+  ]
+}
