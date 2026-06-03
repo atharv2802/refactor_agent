@@ -89,6 +89,16 @@ def _extract_transcript(message: dict[str, Any]) -> list[TranscriptTurn]:
     return turns
 
 
+def _capture_rep_turns(session, message: dict[str, Any]) -> None:
+    """Best-effort: keep the rep's words on the session so the tool handler can
+    ground recorded values. Voice mode doesn't run our text loop, so the only
+    place to pick up the transcript is whatever Vapi includes on the webhook
+    payload. If nothing is present we leave it alone (grounding then no-ops)."""
+    rep_texts = [t.text for t in _extract_transcript(message) if t.role == "rep"]
+    if rep_texts:
+        session.rep_turns = rep_texts
+
+
 def _iter_tool_calls(message: dict[str, Any]):
     """Yield (tool_call_id, name, arguments) across Vapi payload variants."""
     # Newer: message.toolCalls / toolCallList
@@ -129,6 +139,7 @@ async def vapi_webhook(
             raise HTTPException(status_code=404, detail="No active session for call")
         import json
 
+        _capture_rep_turns(session, message)
         results = []
         for tool_call_id, name, raw_args in _iter_tool_calls(message):
             arguments = json.loads(raw_args) if isinstance(raw_args, str) else raw_args

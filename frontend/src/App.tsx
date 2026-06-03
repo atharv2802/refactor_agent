@@ -85,7 +85,10 @@ export default function App() {
       callIdRef.current = callId;
       const assistant = await api.getAssistant(callId);
       setStatus("connecting", "Connecting to call…");
-      await vapi.start(publicKeyRef.current, assistant);
+      const vapiCallId = await vapi.start(publicKeyRef.current, assistant);
+      if (vapiCallId) {
+        await api.linkCall(callId, vapiCallId).catch(() => undefined);
+      }
     } catch (e) {
       setStatus("error", `Could not start: ${(e as Error).message}`);
     }
@@ -116,7 +119,7 @@ export default function App() {
           structured results live.
         </p>
       </header>
-      <main className="mx-auto grid w-full max-w-[1400px] flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[380px_1fr_1fr]">
+      <main className="mx-auto grid w-full max-w-[1400px] min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[380px_1fr_1fr]">
         <ClaimsPanel
           value={claimsText}
           onChange={setClaimsText}

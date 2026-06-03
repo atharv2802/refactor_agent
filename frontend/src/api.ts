@@ -31,6 +31,17 @@ export async function getAssistant(callId: string): Promise<Record<string, unkno
   return json(await fetch(`/api/assistant/${callId}`));
 }
 
+// Register Vapi's call id against our session so webhooks can resolve it.
+export async function linkCall(callId: string, vapiCallId: string): Promise<void> {
+  await json(
+    await fetch(`/api/calls/${callId}/link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vapi_call_id: vapiCallId }),
+    }),
+  );
+}
+
 export async function getResult(callId: string): Promise<CallResult | null> {
   const res = await fetch(`/api/results/${callId}`);
   if (res.status === 404) return null;

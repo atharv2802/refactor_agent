@@ -67,6 +67,23 @@ def create_claims(call_request: CallRequest) -> dict:
     return {"call_id": session.call_id}
 
 
+@app.post("/api/calls/{call_id}/link")
+def link_call(call_id: str, payload: dict) -> dict:
+    """Bind Vapi's call id (returned by vapi.start) to our session.
+
+    Vapi does not reliably echo assistant-level ``metadata`` back on webhooks,
+    so the browser registers the mapping explicitly. This lets the webhook
+    resolve the session by ``vapi_call_id`` when handling tool/end-of-call events.
+    """
+    if store.get(call_id) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown call_id {call_id}")
+    vapi_call_id = payload.get("vapi_call_id")
+    if not vapi_call_id:
+        raise HTTPException(status_code=400, detail="Missing 'vapi_call_id'")
+    store.link_vapi(vapi_call_id, call_id)
+    return {"ok": True}
+
+
 @app.post("/api/claims/837")
 async def parse_837_endpoint(payload: dict) -> dict:
     raw = payload.get("edi", "")

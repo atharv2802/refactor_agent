@@ -80,11 +80,13 @@ def test_unresolved_status_is_valid(call_request):
     assert v.ok
 
 
-def test_double_record_rejected(call_request):
+def test_second_record_is_allowed_as_amendment(call_request):
+    """A repeat record for a known claim is an amendment, not a rejection."""
     from server.models import ClaimStatus, ClaimStatusResult
     g = Guardrails()
     session = _session(call_request)
     cid = call_request.claims[0].claim_id
     session.claims_completed.append(ClaimStatusResult(claim_id=cid, status=ClaimStatus.ADJUSTED))
     v = g.validate_tool_call(session, "record_claim_status", {"claim_id": cid, "status": "adjusted"})
-    assert not v.ok
+    assert v.ok
+    assert any("claim_amended" in w for w in (v.warnings or []))

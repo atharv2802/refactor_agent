@@ -30,10 +30,10 @@ class Settings(BaseSettings):
     server_url: str = "http://localhost:8000"
 
     # Voice rendering
-    voice_provider: str = "11labs"
-    # ElevenLabs requires an actual voice ID, not a display name.
-    # 21m00Tcm4TlvDq8ikWAM = "Rachel" (default ElevenLabs voice).
-    voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+    # Vapi's built-in voice provider uses friendly names (e.g. "Elliot") and
+    # needs no third-party (ElevenLabs) voice ID.
+    voice_provider: str = "vapi"
+    voice_id: str = "Elliot"
 
     # Output
     output_dir: str = "./results"

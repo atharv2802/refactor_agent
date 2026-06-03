@@ -90,6 +90,52 @@ def test_appeal_deadline_auto_flags_claim_for_review(call_request):
     assert "denial_with_appeal_deadline" in result.review_reasons
 
 
+def test_ungrounded_value_is_flagged_for_review(call_request):
+    """An amount the rep never said is a likely mishear -> flagged, not trusted."""
+    cid = call_request.claims[0].claim_id
+    script = [
+        tool_turn("record_claim_status", {
+            "claim_id": cid, "status": "adjusted",
+            "lines": [{"status": "paid", "paid_amount": 9999.0}],
+        }),
+        text_turn("Got it, and your name?"),
+    ]
+    engine, session = _engine(call_request, script)
+    engine.opening_message()
+    engine.process_turn("It was paid, two hundred dollars.")  # never says 9999
+
+    result = session.claims_completed[0]
+    assert result.needs_human_review is True
+    assert "lines[0].paid_amount" in result.low_confidence_fields
+
+
+def test_second_record_amends_in_place(call_request):
+    """A corrected figure replaces the prior record and flags the amendment."""
+    cid = call_request.claims[0].claim_id
+    script = [
+        tool_turn("record_claim_status", {
+            "claim_id": cid, "status": "adjusted",
+            "lines": [{"status": "paid", "paid_amount": 1100.0}],
+        }),
+        text_turn("Let me re-check that for you."),
+        tool_turn("record_claim_status", {
+            "claim_id": cid, "status": "adjusted",
+            "lines": [{"status": "paid", "paid_amount": 1200.0}],
+        }, call_id="tc2"),
+        text_turn("Sorry about that, your name?"),
+    ]
+    engine, session = _engine(call_request, script)
+    engine.opening_message()
+    engine.process_turn("Paid 1100.")
+    engine.process_turn("Correction, it was actually 1200.")
+
+    assert len(session.claims_completed) == 1  # amended, not duplicated
+    result = session.claims_completed[0]
+    assert result.lines[0].paid_amount == 1200.0
+    assert result.needs_human_review is True
+    assert "amended_after_initial_record" in result.review_reasons
+
+
 def test_invalid_claim_id_is_rejected_and_not_recorded(call_request):
     script = [
         tool_turn("record_claim_status", {"claim_id": "WRONG", "status": "adjusted"}),

@@ -37,9 +37,10 @@ export function useVapi(callbacks: VapiCallbacks) {
   }, []);
 
   const start = useCallback(
-    async (publicKey: string, assistant: Record<string, unknown>) => {
+    async (publicKey: string, assistant: Record<string, unknown>): Promise<string | null> => {
       const vapi = ensure(publicKey);
-      await vapi.start(assistant as never);
+      const call = await vapi.start(assistant as never);
+      return call?.id ?? null;
     },
     [ensure],
   );

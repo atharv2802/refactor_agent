@@ -3,14 +3,15 @@ import type { TranscriptEntry } from "../types";
 import { Panel } from "./Panel";
 
 export function TranscriptPanel({ entries }: { entries: TranscriptEntry[] }) {
-  const endRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [entries.length]);
 
   return (
     <Panel title="Live Transcript">
-      <div className="flex-1 overflow-y-auto pr-1">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto pr-1">
         {entries.length === 0 ? (
           <p className="mt-8 text-center text-sm text-slate-400">
             Transcript will appear here once the call starts.
@@ -35,7 +36,6 @@ export function TranscriptPanel({ entries }: { entries: TranscriptEntry[] }) {
             </div>
           ))
         )}
-        <div ref={endRef} />
       </div>
     </Panel>
   );

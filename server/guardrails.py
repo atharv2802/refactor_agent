@@ -99,11 +99,11 @@ class Guardrails:
                 ),
             )
 
+        # A repeat record for a known claim_id is an AMENDMENT (the rep corrected
+        # a value), not an error — the handler upserts it and flags it for review.
+        # We surface a warning for the audit trail but allow it through.
         if session.is_recorded(claim_id):
-            return ToolValidation(
-                ok=False,
-                error=f"Claim '{claim_id}' was already recorded; do not record it twice.",
-            )
+            warnings.append(f"claim_amended:{claim_id}")
 
         status = arguments.get("status")
         valid_status = {s.value for s in ClaimStatus}

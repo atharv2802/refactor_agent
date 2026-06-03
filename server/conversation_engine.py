@@ -89,6 +89,9 @@ class ConversationEngine:
     def process_turn(self, rep_text: str) -> EngineResult:
         self._turns += 1
         self._messages.append({"role": "user", "content": rep_text})
+        # Keep the rep's words on the session so the tool handler can ground
+        # recorded values (amounts / codes) against what was actually said.
+        self._session.rep_turns.append(rep_text)
 
         if self._turns > self._max_turns:
             return self._force_wrap_up()

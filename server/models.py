@@ -151,6 +151,13 @@ class CallSession(BaseModel):
     rep_name: Optional[str] = None
     reference_number: Optional[str] = None
 
+    # What the rep actually said, turn by turn. Used to GROUND recorded values:
+    # an amount / code / EFT number the agent records but that never appears in
+    # the rep's words is a likely hallucination, so it gets flagged for review.
+    # Populated by the text engine each turn and (best-effort) from Vapi webhook
+    # payloads in voice mode.
+    rep_turns: list[str] = Field(default_factory=list)
+
     def current_claim(self) -> Optional[ClaimInfo]:
         if 0 <= self.current_claim_index < len(self.call_request.claims):
             return self.call_request.claims[self.current_claim_index]
